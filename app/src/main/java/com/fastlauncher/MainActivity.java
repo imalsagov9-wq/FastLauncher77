@@ -12,9 +12,9 @@ import android.content.pm.ResolveInfo;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.Rect;
 import android.graphics.Typeface;
 import android.graphics.drawable.BitmapDrawable;
-import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.graphics.drawable.StateListDrawable;
@@ -24,12 +24,12 @@ import android.provider.Settings;
 import android.text.TextUtils;
 import android.util.TypedValue;
 import android.view.Gravity;
+import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
-import android.widget.AbsListView;
-import android.widget.BaseAdapter;
-import android.widget.GridView;
+import android.widget.FrameLayout;
+import android.widget.HorizontalScrollView;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextClock;
@@ -44,11 +44,11 @@ import java.util.Map;
 
 public class MainActivity extends Activity {
 
-    private static final int ACCENT = 0xFF5EC8FF;
-    private static final int BG_TOP = 0xFF0E1320;
-    private static final int BG_BOTTOM = 0xFF05070C;
-    private static final int CARD = 0xFF141A26;
-    private static final int CARD_FOCUS = 0xFF222C3F;
+    private static final int ACCENT = 0xFF8BDCFF;
+    private static final int BG_TOP = 0xFF1C2538;
+    private static final int BG_BOTTOM = 0xFF0C111C;
+    private static final int CARD = 0xFF232E42;
+    private static final int CARD_FOCUS = 0xFF33425E;
 
     static class App {
         String label;
@@ -57,15 +57,8 @@ public class MainActivity extends Activity {
         Drawable icon;
     }
 
-    static class Holder {
-        ImageView icon;
-        TextView label;
-        App app;
-    }
-
-    private final List<App> apps = new ArrayList<>();
-    private GridView grid;
-    private AppAdapter adapter;
+    private HorizontalScrollView scroll;
+    private LinearLayout row;
     private float density;
     private int loadToken = 0;
 
@@ -87,7 +80,7 @@ public class MainActivity extends Activity {
 
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(dp(56), dp(36), dp(56), 0);
+        root.setPadding(0, dp(36), 0, 0);
         root.setClipChildren(false);
         root.setClipToPadding(false);
         root.setBackground(new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
@@ -99,32 +92,37 @@ public class MainActivity extends Activity {
         time.setTextColor(Color.WHITE);
         time.setTextSize(TypedValue.COMPLEX_UNIT_SP, 44);
         time.setTypeface(Typeface.create("sans-serif-light", Typeface.NORMAL));
-        root.addView(time, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        LinearLayout.LayoutParams tlp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        tlp.leftMargin = dp(56);
+        root.addView(time, tlp);
 
         TextClock date = new TextClock(this);
         date.setFormat24Hour("EEEE, d MMMM");
         date.setFormat12Hour("EEEE, d MMMM");
-        date.setTextColor(0xFF8A94A8);
+        date.setTextColor(0xFFA3AEC4);
         date.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
-        root.addView(date, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        LinearLayout.LayoutParams dlp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        dlp.leftMargin = dp(56);
+        root.addView(date, dlp);
 
-        grid = new GridView(this);
-        grid.setNumColumns(GridView.AUTO_FIT);
-        grid.setColumnWidth(dp(170));
-        grid.setStretchMode(GridView.STRETCH_COLUMN_WIDTH);
-        grid.setHorizontalSpacing(dp(16));
-        grid.setVerticalSpacing(dp(16));
-        grid.setClipToPadding(false);
-        grid.setClipChildren(false);
-        grid.setPadding(dp(12), dp(28), dp(12), dp(28));
-        grid.setSelector(new ColorDrawable(Color.TRANSPARENT));
-        grid.setVerticalScrollBarEnabled(false);
-        grid.setOverScrollMode(View.OVER_SCROLL_NEVER);
-        adapter = new AppAdapter();
-        grid.setAdapter(adapter);
-        root.addView(grid, new LinearLayout.LayoutParams(
+        scroll = new HorizontalScrollView(this);
+        scroll.setHorizontalScrollBarEnabled(false);
+        scroll.setOverScrollMode(View.OVER_SCROLL_NEVER);
+        scroll.setClipChildren(false);
+        scroll.setClipToPadding(false);
+        scroll.setPadding(dp(56), dp(30), dp(40), dp(30));
+
+        row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setClipChildren(false);
+        row.setClipToPadding(false);
+        scroll.addView(row, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+                Gravity.CENTER_VERTICAL));
+
+        root.addView(scroll, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
 
         setContentView(root);
@@ -143,190 +141,15 @@ public class MainActivity extends Activity {
     @Override
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
-        if (grid != null && adapter.getCount() > 0) {
-            grid.setSelection(0);
-            View c = grid.getChildAt(0);
-            if (c != null) c.requestFocus();
+        if (row != null && row.getChildCount() > 0) {
+            scroll.smoothScrollTo(0, 0);
+            row.getChildAt(0).requestFocus();
         }
     }
 
     @Override
-    @SuppressWarnings("deprecation")
-    public void onBackPressed() {
-        // Launcher: Back does nothing.
-    }
-
-    @Override
-    protected void onDestroy() {
-        loadToken++;
-        try {
-            unregisterReceiver(pkgReceiver);
-        } catch (Exception ignored) {
-        }
-        super.onDestroy();
-    }
-
-    private void load() {
-        final int token = ++loadToken;
-        new Thread(() -> {
-            PackageManager pm = getPackageManager();
-            Map<String, App> map = new LinkedHashMap<>();
-            collect(pm, Intent.CATEGORY_LEANBACK_LAUNCHER, map);
-            collect(pm, Intent.CATEGORY_LAUNCHER, map);
-            final List<App> list = new ArrayList<>(map.values());
-            Collections.sort(list, (x, y) -> x.label.compareToIgnoreCase(y.label));
-            runOnUiThread(() -> {
-                if (token != loadToken || isDestroyed()) return;
-                boolean first = apps.isEmpty();
-                apps.clear();
-                apps.addAll(list);
-                adapter.notifyDataSetChanged();
-                if (first) {
-                    grid.postDelayed(() -> {
-                        View c = grid.getChildAt(0);
-                        if (c != null && grid.getFocusedChild() == null) c.requestFocus();
-                    }, 150);
-                }
-            });
-        }).start();
-    }
-
-    private void collect(PackageManager pm, String category, Map<String, App> map) {
-        Intent i = new Intent(Intent.ACTION_MAIN).addCategory(category);
-        for (ResolveInfo r : pm.queryIntentActivities(i, 0)) {
-            ActivityInfo ai = r.activityInfo;
-            if (ai == null) continue;
-            if (ai.packageName.equals(getPackageName())) continue;
-            if (map.containsKey(ai.packageName)) continue;
-            App a = new App();
-            a.pkg = ai.packageName;
-            a.cn = new ComponentName(ai.packageName, ai.name);
-            a.label = String.valueOf(r.loadLabel(pm));
-            a.icon = shrink(r.loadIcon(pm), dp(64));
-            map.put(a.pkg, a);
-        }
-    }
-
-    private Drawable shrink(Drawable d, int px) {
-        try {
-            Bitmap b = Bitmap.createBitmap(px, px, Bitmap.Config.ARGB_8888);
-            Canvas c = new Canvas(b);
-            d.setBounds(0, 0, px, px);
-            d.draw(c);
-            return new BitmapDrawable(getResources(), b);
-        } catch (Throwable t) {
-            return d;
-        }
-    }
-
-    private GradientDrawable shape(int color, int strokePx, int strokeColor) {
-        GradientDrawable g = new GradientDrawable();
-        g.setColor(color);
-        g.setCornerRadius(dp(16));
-        if (strokePx > 0) g.setStroke(strokePx, strokeColor);
-        return g;
-    }
-
-    private View makeCard() {
-        LinearLayout c = new LinearLayout(this);
-        c.setOrientation(LinearLayout.VERTICAL);
-        c.setGravity(Gravity.CENTER);
-        c.setLayoutParams(new AbsListView.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, dp(136)));
-        c.setPadding(dp(8), dp(12), dp(8), dp(10));
-
-        StateListDrawable bg = new StateListDrawable();
-        bg.addState(new int[]{android.R.attr.state_focused}, shape(CARD_FOCUS, dp(3), ACCENT));
-        bg.addState(new int[]{}, shape(CARD, 0, 0));
-        c.setBackground(bg);
-
-        c.setFocusable(true);
-        c.setFocusableInTouchMode(true);
-        c.setClickable(true);
-
-        final Holder h = new Holder();
-        h.icon = new ImageView(this);
-        h.icon.setScaleType(ImageView.ScaleType.FIT_CENTER);
-        c.addView(h.icon, new LinearLayout.LayoutParams(dp(64), dp(64)));
-
-        h.label = new TextView(this);
-        h.label.setTextColor(0xFFE6EAF2);
-        h.label.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
-        h.label.setSingleLine(true);
-        h.label.setEllipsize(TextUtils.TruncateAt.END);
-        h.label.setGravity(Gravity.CENTER);
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        lp.topMargin = dp(10);
-        c.addView(h.label, lp);
-
-        c.setTag(h);
-
-        c.setOnFocusChangeListener((v, has) -> {
-            v.animate().scaleX(has ? 1.08f : 1f).scaleY(has ? 1.08f : 1f).setDuration(110).start();
-            v.setTranslationZ(has ? dp(8) : 0);
-        });
-
-        c.setOnHoverListener((v, e) -> {
-            if (e.getAction() == MotionEvent.ACTION_HOVER_ENTER && !v.hasFocus()) {
-                v.requestFocus();
-            }
-            return false;
-        });
-
-        c.setOnClickListener(v -> {
-            if (h.app == null) return;
-            Intent i = new Intent(Intent.ACTION_MAIN);
-            i.setComponent(h.app.cn);
-            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED);
-            try {
-                startActivity(i);
-            } catch (Exception e) {
-                Toast.makeText(this, "Не удалось открыть", Toast.LENGTH_SHORT).show();
-            }
-        });
-
-        // Long press / long OK: open app info (disable, clear cache, uninstall)
-        c.setOnLongClickListener(v -> {
-            if (h.app == null) return true;
-            Intent s = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-                    Uri.parse("package:" + h.app.pkg));
-            s.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            try {
-                startActivity(s);
-            } catch (Exception ignored) {
-            }
-            return true;
-        });
-
-        return c;
-    }
-
-    private class AppAdapter extends BaseAdapter {
-        @Override
-        public int getCount() {
-            return apps.size();
-        }
-
-        @Override
-        public Object getItem(int i) {
-            return apps.get(i);
-        }
-
-        @Override
-        public long getItemId(int i) {
-            return i;
-        }
-
-        @Override
-        public View getView(int i, View v, ViewGroup parent) {
-            if (v == null) v = makeCard();
-            Holder h = (Holder) v.getTag();
-            App a = apps.get(i);
-            h.app = a;
-            h.icon.setImageDrawable(a.icon);
-            h.label.setText(a.label);
-            return v;
-        }
-    }
-}
+    public boolean dispatchKeyEvent(KeyEvent e) {
+        if (e.getAction() == KeyEvent.ACTION_DOWN && row != null && row.getChildCount() > 0) {
+            int k = e.getKeyCode();
+            boolean vertical = k == KeyEvent.KEYCODE_DPAD_UP || k == KeyEvent.KEYCODE_DPAD_DOWN;
+            boolean horizontal =
